@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DirCrawler": {
+      "commandName": "Project",
+      "commandLineArgs": "DapperLib/Dapper\r\nmain\r\nC:/Users/Vladislav/Desktop"
+    }
+  }
+}

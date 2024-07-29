@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FileDownloader": {
+      "commandName": "Project",
+      "commandLineArgs": "C:/Users/Vladislav/Desktop/gitrow.json\r\nC:/Users/Vladislav/Desktop/Downloads"
+    }
+  }
+}
