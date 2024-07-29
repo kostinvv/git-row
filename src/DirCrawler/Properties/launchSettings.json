@@ -2,7 +2,7 @@
   "profiles": {
     "DirCrawler": {
       "commandName": "Project",
-      "commandLineArgs": "DapperLib/Dapper\r\nmain\r\nC:/Users/Vladislav/Desktop"
+      "commandLineArgs": "dotnet/Open-XML-SDK\r\nrelease/v2.20.0\r\nC:/Users/Vladislav/Desktop"
     }
   }
 }

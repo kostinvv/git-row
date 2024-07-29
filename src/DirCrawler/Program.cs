@@ -10,10 +10,10 @@ namespace DirCrawler
 {
     public class Program
     {
-        private static List<FileLink> _fileLinks = new List<FileLink>();
-
         private async static Task Main(string[] args)
         {
+            var fileLinks = new List<FileLink>();
+
             if (args.Length < 3)
             {
                 Console.WriteLine("Specify the Repository name, Branch name, and Output directory.");
@@ -46,10 +46,12 @@ namespace DirCrawler
 
             var initUrl = $"{repository}/contents?ref={branch}";
 
+            Console.WriteLine(initUrl);
+
             var stopwatch = new Stopwatch();
 
             stopwatch.Start();
-            await RecordLinksAndPathsAsync(_fileLinks, initUrl);
+            await RecordLinksAndPathsAsync(fileLinks, initUrl);
             stopwatch.Stop();
 
             TimeSpan timeTaken = stopwatch.Elapsed;
@@ -60,8 +62,8 @@ namespace DirCrawler
 
             Console.WriteLine(timeFormatted);
 
-            string linksJson = JsonSerializer.Serialize(_fileLinks);
-            File.WriteAllText($"{outputDir}/gitrow.json", linksJson);
+            string linksJson = JsonSerializer.Serialize(fileLinks);
+            File.WriteAllText($"{outputDir}/lib.json", linksJson);
         }
 
         private static async Task RecordLinksAndPathsAsync(List<FileLink> fileLinks, string url)

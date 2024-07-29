@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -37,20 +38,49 @@ namespace FileDownloader
             int totalFiles = fileLinks.Count;
             int downloadedFiles = 0;
 
-            using var httpClient = new HttpClient();
-            foreach (var fileLink in fileLinks)
+            var failDownloads = new List<string>();
+
+            using (var httpClient = new HttpClient(new HttpClientHandler()
             {
-                var path = $"{outputDirectory}/{fileLink.Path}";
-                var uri = new Uri(fileLink.DownloadUrl);
-
-                CreateDirectories(path);
-
-                byte[] fileBytes = await httpClient.GetByteArrayAsync(uri);
-                await File.WriteAllBytesAsync($"{path}/{fileLink.Name}", fileBytes);
-
-                downloadedFiles++;
-                DisplayProgressBar(downloadedFiles, totalFiles);
+                Proxy = new WebProxy
+                {
+                    Address = new Uri(""),
+                    UseDefaultCredentials = true,
+                }
             }
+            ))
+            {
+                foreach (var fileLink in fileLinks)
+                {
+                    try
+                    {
+                        var path = $"{outputDirectory}/{fileLink.Path}";
+                        var uri = new Uri(fileLink.DownloadUrl);
+
+                        CreateDirectories(path);
+
+                        byte[] fileBytes = await httpClient.GetByteArrayAsync(uri);
+                        await File.WriteAllBytesAsync($"{path}/{fileLink.Name}", fileBytes);
+                        downloadedFiles++;
+                    }
+                    catch (Exception)
+                    {
+                        failDownloads.Add(fileLink.DownloadUrl);
+                    }
+
+                    DisplayProgressBar(downloadedFiles, totalFiles);
+                }
+            }
+
+            if (failDownloads.Count > 0)
+            {
+                foreach (var file in failDownloads)
+                {
+                    Console.WriteLine(file);
+                }
+            }
+
+            Console.ReadKey();
         }
 
         private static void CreateDirectories(string path)
