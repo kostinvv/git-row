@@ -1,112 +1,139 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FileDownloader
 {
-    public class Program
+    internal class Program
     {
+        private const string ProxyUrl = "";
+
+        private const int MaxConcurrentRequests = 4;
+
+        private static SocketsHttpHandler socketsHttpHandler = new()
+        {
+            MaxConnectionsPerServer = MaxConcurrentRequests,
+            /*Proxy = new WebProxy()
+            {
+                Address = new Uri(ProxyUrl),
+                UseDefaultCredentials = true,
+            },*/
+        };
+
+        private static SemaphoreSlim semaphore = new(initialCount: MaxConcurrentRequests);
+
+        private static HttpClient _httpClient = new(socketsHttpHandler);
+
+        private record JSONFileLink(string Name, string Path, string DownloadUrl);
+
         private async static Task Main(string[] args)
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("Specify the input file path and output directory.");
+                Console.WriteLine("Specify the [JSON File Path] and [Output Directory].");
                 return;
             }
 
-            var inputFilePath = args[0];
-            var outputDirectory = args[1];
+            string jsonFilePath = args[0];
 
-            if (!File.Exists(inputFilePath))
+            if (!File.Exists(jsonFilePath))
             {
-                Console.WriteLine($"File {inputFilePath} does not exist.");
+                Console.WriteLine($"File {jsonFilePath} does not exist.");
                 return;
             }
 
-            CreateDirectories(outputDirectory);
+            string downloadDirectory = args[1];
 
-            using var fileStream = new FileStream(
-                path: inputFilePath, mode: FileMode.Open, access: FileAccess.Read);
+            if (!Directory.Exists(downloadDirectory))
+            {
+                Directory.CreateDirectory(downloadDirectory);
+            }
 
-            var fileLinks = await JsonSerializer
-                .DeserializeAsync<List<FileLink>>(fileStream);
-
-            int totalFiles = fileLinks.Count;
-            int downloadedFiles = 0;
-
+            var fileLinks = new List<JSONFileLink>(); 
+            var tasks = new List<Task>();
+            var watch = new Stopwatch();
             var failDownloads = new List<string>();
 
-            using (var httpClient = new HttpClient(new HttpClientHandler()
+            using (var fileStream = new FileStream(path: jsonFilePath, mode: FileMode.Open, access: FileAccess.Read))
             {
-                Proxy = new WebProxy
-                {
-                    Address = new Uri(""),
-                    UseDefaultCredentials = true,
-                }
-            }
-            ))
+                fileLinks = await JsonSerializer.DeserializeAsync<List<JSONFileLink>>(fileStream);
+            };
+
+            int downloadFiles = 0;
+
+            watch.Start();
+            foreach (var fileLink in fileLinks)
             {
-                foreach (var fileLink in fileLinks)
+                tasks.Add(Task.Run(async () =>
                 {
-                    try
-                    {
-                        var path = $"{outputDirectory}/{fileLink.Path}";
-                        var uri = new Uri(fileLink.DownloadUrl);
+                    string fullPath = $"{downloadDirectory}/{fileLink.Path}";
 
-                        CreateDirectories(path);
-
-                        byte[] fileBytes = await httpClient.GetByteArrayAsync(uri);
-                        await File.WriteAllBytesAsync($"{path}/{fileLink.Name}", fileBytes);
-                        downloadedFiles++;
-                    }
-                    catch (Exception)
+                    if (!Directory.Exists(fullPath) && fullPath is not "")
                     {
-                        failDownloads.Add(fileLink.DownloadUrl);
+                        Directory.CreateDirectory(fullPath);
                     }
 
-                    DisplayProgressBar(downloadedFiles, totalFiles);
-                }
+                    byte[] fileBytes = await DownloadFileAsync(new Uri(fileLink.DownloadUrl));
+
+                    if (fileBytes is null)
+                    {
+                        lock (failDownloads)
+                        {
+                            failDownloads.Add(fileLink.Name);
+                        }
+                        return;
+                    }
+
+                    await File.WriteAllBytesAsync($"{fullPath}/{fileLink.Name}", fileBytes);
+
+                    Interlocked.Increment(ref downloadFiles);
+                    Console.Write($"\r{downloadFiles}/{fileLinks.Count} files");
+                }));
             }
+            await Task.WhenAll(tasks);
+            watch.Stop();
+
+            TimeSpan timeTaken = watch.Elapsed;
+            var timeFormatted = string.Format("{0:D2}m:{1:D2}s:{2:D3}ms", 
+                timeTaken.Minutes, 
+                timeTaken.Seconds, 
+                timeTaken.Milliseconds);
+
+            Console.WriteLine($"\nTime: {timeFormatted}");
 
             if (failDownloads.Count > 0)
             {
-                foreach (var file in failDownloads)
+                Console.WriteLine("\nFail: ");
+                for (var i = 1; i < failDownloads.Count; i++)
                 {
-                    Console.WriteLine(file);
+                    Console.WriteLine($"{i}. {failDownloads[i - 1]}");
                 }
             }
 
             Console.ReadKey();
         }
 
-        private static void CreateDirectories(string path)
+        private async static Task<byte[]> DownloadFileAsync(Uri uri)
         {
-            if (!Directory.Exists(path) && path is not "")
+            try
             {
-                Directory.CreateDirectory(path);
+                await semaphore.WaitAsync();
+
+                return await _httpClient.GetByteArrayAsync(uri);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+            finally
+            {
+                semaphore.Release();
             }
         }
-
-        private static void DisplayProgressBar(int complete, int total)
-        {
-            const int barWidth = 24;
-            var progress = (float)complete / total;
-            var filledBars = (int)(progress * barWidth);
-
-            Console.CursorLeft = 0;
-            Console.Write("[");
-            Console.Write(new string('#', filledBars));
-            Console.Write(new string('.', barWidth - filledBars));
-            Console.Write($"] {complete}/{total} files");
-        }
     }
-
-    public record FileLink(
-        string Name,
-        string Path, 
-        string DownloadUrl);
 }
